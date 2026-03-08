@@ -1,5 +1,12 @@
-[project]
-id = "your-supabase-project-ref"
+project_id = "kfmeeqkmlwskinlojrwa"
 
 [api]
 port = 54321
+
+[functions]
+# Disable Supabase gateway JWT verification for all MCP functions.
+# Auth is handled inside each function via _shared/mcp-auth.
+# This is the recommended pattern for MCP servers per Supabase docs:
+# https://supabase.com/docs/guides/functions/auth
+[functions.mcp-outlook]
+verify_jwt = false
