@@ -2,3 +2,5 @@ supabase/.env.local
 .env
 .env.local
 node_modules/
+.mcp-api-key
+.mcp-endpoint
