@@ -1,0 +1,5 @@
+[project]
+id = "your-supabase-project-ref"
+
+[api]
+port = 54321
