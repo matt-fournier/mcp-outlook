@@ -9,17 +9,17 @@ serve(async (req: Request) => {
   if (corsResponse) return corsResponse;
 
   try {
-    // Authenticate every request
-    const user = await authenticate(req);
-    if (!user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
+    // Authenticate every request via shared mcp-auth module
+    const result = await authenticate(req);
+    if (!result.success) {
+      return new Response(JSON.stringify({ error: result.error }), {
+        status: result.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     // Route to MCP handler
-    const server = createMcpServer(user);
+    const server = createMcpServer(result.identity);
     return await server.handle(req);
   } catch (error) {
     console.error("[MCP] Unhandled error:", error);

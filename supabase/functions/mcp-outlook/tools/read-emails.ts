@@ -20,7 +20,7 @@ export const readEmailsTool: McpTool = {
           .string()
           .default("inbox")
           .describe(
-            "Mail folder to read from (e.g. inbox, sentitems, drafts, deleteditems). Default: inbox",
+            "Mail folder to read from. Use a well-known name (inbox, sentitems, drafts, deleteditems, junkemail, archive) or a folder ID from list_mail_folders. Default: inbox",
           ),
         limit: z
           .number()
@@ -28,6 +28,12 @@ export const readEmailsTool: McpTool = {
           .max(50)
           .default(10)
           .describe("Maximum number of emails to return (default: 10, max: 50)"),
+        focused_only: z
+          .boolean()
+          .default(true)
+          .describe(
+            "When true (default), only return emails from the Focused inbox, excluding the 'Other' tab. Set to false to include all emails.",
+          ),
         filter: z
           .string()
           .optional()
@@ -42,16 +48,26 @@ export const readEmailsTool: McpTool = {
           ),
       },
 
-      async ({ user_email, folder, limit, filter, search }) => {
+      async ({ user_email, folder, limit, focused_only, filter, search }) => {
         try {
           const params: Record<string, string> = {
             $top: String(limit),
             $select:
-              "id,subject,from,toRecipients,receivedDateTime,bodyPreview,isRead,hasAttachments",
+              "id,subject,from,toRecipients,receivedDateTime,bodyPreview,isRead,hasAttachments,inferenceClassification",
             $orderby: "receivedDateTime desc",
           };
 
-          if (filter) params.$filter = filter;
+          // Build $filter: combine focused_only with any user-provided filter
+          const filters: string[] = [];
+          if (focused_only) {
+            filters.push("inferenceClassification eq 'focused'");
+          }
+          if (filter) {
+            filters.push(filter);
+          }
+          if (filters.length > 0) {
+            params.$filter = filters.join(" and ");
+          }
           if (search) params.$search = `"${search}"`;
 
           const data = (await graphRequest(
