@@ -169,6 +169,79 @@ export JWT=$(curl -sS -X POST "$SUPABASE_URL/auth/v1/token?grant_type=password" 
   | python3 -c 'import sys, json; print(json.load(sys.stdin)["access_token"])')
 ```
 
+## Mise en production de l'authentification
+
+Voici les étapes effectuées pour configurer l'authentification en production :
+
+### 1. Module d'auth partagé (`_shared/mcp-auth/`)
+
+Un module réutilisable a été créé dans `supabase/functions/_shared/mcp-auth/` pour centraliser la logique d'authentification de tous les MCPs du projet. Il implémente trois stratégies, essayées dans l'ordre : SKIP_AUTH (dev), API Key (clients machine-to-machine), Supabase JWT (apps web).
+
+### 2. Génération de la clé API
+
+```bash
+# Générer une clé aléatoire de 32 octets, puis la préfixer
+openssl rand -hex 32
+# Résultat : e0b5c3b7358d1822fbefe74bec8d1e3606214e1a11420e0cdabcb3d53fd9828d
+# Clé finale : mcp_sk_e0b5c3b7358d1822fbefe74bec8d1e3606214e1a11420e0cdabcb3d53fd9828d
+```
+
+Le préfixe `mcp_sk_` permet au module d'auth de distinguer une clé API d'un JWT Supabase et de router vers la bonne stratégie de validation.
+
+### 3. Enregistrement du secret dans Supabase
+
+```bash
+supabase secrets set MCP_API_KEYS="claude-desktop:mcp_sk_e0b5c3b7358d..."
+```
+
+Le format `nom:clé` permet d'identifier le client dans les logs et de révoquer une clé individuellement sans affecter les autres. Plusieurs clés sont séparées par des virgules.
+
+### 4. Désactivation du `verify_jwt` au gateway
+
+Dans `supabase/config.toml` :
+
+```toml
+[functions.mcp-outlook]
+verify_jwt = false
+```
+
+Le gateway Supabase est incompatible avec le nouveau modèle de clés asymétriques (Signing Keys). L'authentification est donc entièrement gérée dans le code de la fonction, conformément au [pattern recommandé par Supabase](https://supabase.com/docs/guides/functions/auth).
+
+### 5. Résolution du problème d'import `_shared`
+
+Le bundler Supabase ne résout pas automatiquement les chemins vers `_shared/`. Un fichier `supabase/functions/deno.json` a été créé avec un import map :
+
+```json
+{
+  "imports": {
+    "@shared/": "./_shared/"
+  }
+}
+```
+
+Tous les imports utilisent ensuite `@shared/mcp-auth/mod.ts` au lieu de chemins relatifs.
+
+### 6. Déploiement
+
+```bash
+supabase functions deploy mcp-outlook --no-verify-jwt
+```
+
+### 7. Validation
+
+```bash
+curl -X POST https://kfmeeqkmlwskinlojrwa.supabase.co/functions/v1/mcp-outlook \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer mcp_sk_VOTRE_CLE" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+```
+
+Le test a retourné les 5 outils disponibles, confirmant que l'authentification par clé API fonctionne en production.
+
+### 8. Configuration des clients
+
+Pour Claude Desktop, la configuration utilise `npx mcp-remote` comme proxy puisque Claude Desktop ne supporte pas nativement les serveurs MCP distants via HTTP. Pour Cowork, le MCP est connecté directement via le connecteur intégré.
+
 ## Configuration des secrets (production)
 
 ```bash
