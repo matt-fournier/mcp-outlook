@@ -209,17 +209,13 @@ Le gateway Supabase est incompatible avec le nouveau modèle de clés asymétriq
 
 ### 5. Résolution du problème d'import `_shared`
 
-Le bundler Supabase ne résout pas automatiquement les chemins vers `_shared/`. Un fichier `supabase/functions/deno.json` a été créé avec un import map :
+Le bundler Supabase ne résout pas toujours l'import map `@shared/` défini dans `deno.json`. Les imports dans les Edge Functions utilisent des **chemins relatifs** :
 
-```json
-{
-  "imports": {
-    "@shared/": "./_shared/"
-  }
-}
+```typescript
+import { authenticate } from "../_shared/mcp-auth/mod.ts";
 ```
 
-Tous les imports utilisent ensuite `@shared/mcp-auth/mod.ts` au lieu de chemins relatifs.
+> **Note :** Un `deno.json` avec un import map `@shared/` existe pour le développement local, mais le bundler de déploiement Supabase nécessite des chemins relatifs.
 
 ### 6. Déploiement
 
@@ -232,15 +228,16 @@ supabase functions deploy mcp-outlook --no-verify-jwt
 ```bash
 curl -X POST https://kfmeeqkmlwskinlojrwa.supabase.co/functions/v1/mcp-outlook \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
   -H "Authorization: Bearer mcp_sk_VOTRE_CLE" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}'
 ```
 
-Le test a retourné les 5 outils disponibles, confirmant que l'authentification par clé API fonctionne en production.
+Une réponse contenant `serverInfo` confirme que l'authentification et le serveur fonctionnent en production.
 
 ### 8. Configuration des clients
 
-Pour Claude Desktop, la configuration utilise `npx mcp-remote` comme proxy puisque Claude Desktop ne supporte pas nativement les serveurs MCP distants via HTTP. Pour Cowork, le MCP est connecté directement via le connecteur intégré.
+Pour Claude Desktop / Cowork, utiliser `npx supergateway` comme proxy stdio ↔ Streamable HTTP (voir section "Intégration Claude Desktop" ci-dessous). `mcp-remote` n'est pas recommandé car il effectue une découverte OAuth incompatible avec Supabase Edge Functions. Pour les apps web, passer le `session.access_token` Supabase comme Bearer token.
 
 ## Configuration des secrets (production)
 
@@ -266,22 +263,31 @@ supabase functions deploy mcp-outlook --no-verify-jwt
 
 Ou automatiquement via GitHub Actions lors d'un push sur `main`.
 
-## Intégration Claude Desktop
+## Intégration Claude Desktop / Cowork
 
-Ajouter dans la configuration MCP de Claude Desktop :
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json`.
+
+Use `supergateway` to bridge stdio ↔ Streamable HTTP :
 
 ```json
 {
   "mcpServers": {
     "outlook": {
-      "url": "https://kfmeeqkmlwskinlojrwa.supabase.co/functions/v1/mcp-outlook",
-      "headers": {
-        "Authorization": "Bearer mcp_sk_VOTRE_CLE_SECRETE"
-      }
+      "command": "npx",
+      "args": [
+        "-y",
+        "supergateway",
+        "--streamableHttp",
+        "https://kfmeeqkmlwskinlojrwa.supabase.co/functions/v1/mcp-outlook",
+        "--header",
+        "Authorization: Bearer mcp_sk_VOTRE_CLE_SECRETE"
+      ]
     }
   }
 }
 ```
+
+> **Note :** `mcp-remote` n'est pas recommandé — il effectue une découverte OAuth obligatoire qui échoue avec les Supabase Edge Functions. Utiliser `supergateway` à la place.
 
 ## Intégration app web (Supabase Auth)
 
